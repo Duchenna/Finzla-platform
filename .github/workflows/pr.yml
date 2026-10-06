@@ -1,0 +1,63 @@
+name: PR Validation
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -r app/requirements.txt pytest httpx
+      - run: pytest app/tests -q
+
+      - name: Build Docker image (no push)
+        run: docker build -t finzla-app:${{ github.sha }} ./app
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: finzla-app:${{ github.sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+
+  terraform:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.9.5 }
+
+      - name: Format check
+        run: terraform fmt -check -recursive terraform
+
+      - name: Init (no backend for validate)
+        working-directory: terraform/environments/${{ matrix.env }}
+        run: terraform init -backend=false
+
+      - name: Validate
+        working-directory: terraform/environments/${{ matrix.env }}
+        run: terraform validate
+
+      - name: Configure AWS (read-only plan role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/gha-finzla-plan
+          aws-region: eu-west-1
+
+      - name: Plan
+        working-directory: terraform/environments/${{ matrix.env }}
+        run: |
+          terraform init
+          terraform plan -lock-timeout=5m -out=tfplan

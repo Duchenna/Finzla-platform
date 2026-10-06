@@ -1,0 +1,9 @@
+region          = "eu-west-1"
+environment     = "dev"
+vpc_cidr        = "10.10.0.0/16"
+public_subnets  = ["10.10.0.0/24","10.10.1.0/24"]
+private_subnets = ["10.10.10.0/24","10.10.11.0/24"]
+certificate_arn = "arn:aws:acm:eu-west-1:123456789012:certificate/REPLACE_ME"
+kms_key_arn     = "arn:aws:kms:eu-west-1:123456789012:key/REPLACE_ME"
+app_secret_arn  = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:finzla/dev/app-REPLACE"
+image_tag       = "bootstrap"

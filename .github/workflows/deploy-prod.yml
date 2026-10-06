@@ -1,0 +1,63 @@
+name: Deploy Prod
+
+on:
+  workflow_dispatch:            # manual trigger, protected by environment
+  push:
+    tags: ['v*']
+
+permissions:
+  id-token: write               # REQUIRED for OIDC -> AWS
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: prod                # required reviewers configured in GitHub
+      url: https://app.finzla.example.com   # must be a real URL you own
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/gha-finzla-prod
+          aws-region: eu-west-1
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Terraform init & apply
+        working-directory: terraform/environments/prod
+        run: |
+          terraform init
+          terraform apply -auto-approve -var="image_tag=${{ github.ref_name }}"
+
+      - name: Wait for ECS service stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster finzla-prod-cluster \
+            --services finzla-prod-svc
+
+      - name: Health check
+        run: |
+          ALB=$(terraform -chdir=terraform/environments/prod output -raw alb_dns_name)
+          for i in {1..10}; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" https://$ALB/health || true)
+            [ "$CODE" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "Health check failed"; exit 1
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          PREV=$(aws ecs describe-services \
+            --cluster finzla-prod-cluster \
+            --services finzla-prod-svc \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs update-service \
+            --cluster finzla-prod-cluster \
+            --service finzla-prod-svc \
+            --task-definition $PREV --force-new-deployment
