@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finzla-app-config
+  namespace: finzla
+data:
+  APP_ENV: "local"
+  APP_VERSION: "0.0.0-local"
+  LOG_LEVEL: "INFO"

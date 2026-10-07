@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: finzla-app
+  namespace: finzla
+  labels:
+    app: finzla-app
+spec:
+  type: ClusterIP              # internal only — no public exposure
+  selector:
+    app: finzla-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
